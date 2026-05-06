@@ -14,7 +14,19 @@
  *
  * Depuis Termux (téléphone) ou autre PC : même commande
  */
+#define _GNU_SOURCE
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,7 +38,8 @@ static int  sockfd  = -1;
 static int  running = 1;
 static pthread_mutex_t running_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-/* prix courant connu par le client (pour affichage) */
+/* prix courant conn
+u par le client (pour affichage) */
 static uint32_t current_price = 0;
 static char     current_leader[MAX_NAME_LEN] = "aucun";
 static pthread_mutex_t price_mutex = PTHREAD_MUTEX_INITIALIZER;
