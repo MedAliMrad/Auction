@@ -1,12 +1,4 @@
 #!/usr/bin/env python3
-"""
-Web bridge for the auction system.
-Connects to the C server as a client and exposes a web interface.
-
-Usage: python3 web/server.py [auction_ip] [auction_port] [web_port] [room]
-  Default: python3 web/server.py 127.0.0.1 8080 5000 1
-"""
-
 import socket
 import struct
 import threading
@@ -17,7 +9,6 @@ import os
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
-# Protocol constants (must match common.h)
 MAX_NAME_LEN = 32
 MAX_ITEM_LEN = 64
 BUFFER_SIZE  = 256
@@ -33,15 +24,11 @@ MSG_WINNER       = 8
 MSG_CHAT         = 9
 MSG_BYE          = 10
 MSG_CONNECTED    = 11
-MSG_HISTORY      = 12
 MSG_BALANCE      = 13
-MSG_NEXT_AUCTION = 14
 
-# Message struct layout: uint8 + 32s + 64s + uint32 + uint32 + uint8 + 256s
-MSG_FORMAT = '<B32s64sIIB256s'
+MSG_FORMAT = '<B32s67sIIB256s'
 MSG_SIZE   = struct.calcsize(MSG_FORMAT)
 
-# Shared state
 state = {
     "item": "",
     "current_price": 0,
@@ -52,7 +39,8 @@ state = {
     "messages": [],
     "winner": None,
     "balance": 1000,
-    "room": 0
+    "room": 0,
+    "pseudo": "Anonyme"
 }
 state_lock = threading.Lock()
 sock = None
@@ -63,13 +51,13 @@ def decode_msg(data):
         return None
     parts = struct.unpack(MSG_FORMAT, data[:MSG_SIZE])
     return {
-        "type": parts[0],
-        "name": parts[1].split(b'\x00')[0].decode('utf-8', errors='replace'),
-        "item": parts[2].split(b'\x00')[0].decode('utf-8', errors='replace'),
-        "amount": parts[3],
+        "type":    parts[0],
+        "name":    parts[1].split(b'\x00')[0].decode('utf-8', errors='replace'),
+        "item":    parts[2].split(b'\x00')[0].decode('utf-8', errors='replace'),
+        "amount":  parts[3],
         "balance": parts[4],
-        "room": parts[5],
-        "text": parts[6].split(b'\x00')[0].decode('utf-8', errors='replace'),
+        "room":    parts[5],
+        "text":    parts[6].split(b'\x00')[0].decode('utf-8', errors='replace'),
     }
 
 
@@ -112,7 +100,11 @@ def receiver_thread():
                 elif msg["type"] == MSG_TIMER:
                     state["time_left"] = msg["amount"]
                 elif msg["type"] == MSG_WINNER:
-                    state["winner"] = {"name": msg["name"], "amount": msg["amount"], "text": msg["text"]}
+                    state["winner"] = {
+                        "name": msg["name"],
+                        "amount": msg["amount"],
+                        "text": msg["text"]
+                    }
                     state["messages"].append({"type": "winner", "text": msg["text"]})
                 elif msg["type"] == MSG_CONNECTED:
                     state["connected"] = msg["amount"]
@@ -124,12 +116,6 @@ def receiver_thread():
                     state["messages"].append({"type": "error", "text": msg["text"]})
                 elif msg["type"] == MSG_CHAT:
                     state["messages"].append({"type": "chat", "text": msg["text"]})
-                elif msg["type"] == MSG_NEXT_AUCTION:
-                    state["winner"] = None
-                    state["history"] = []
-                    state["messages"].append({"type": "next", "text": msg["text"]})
-                elif msg["type"] == MSG_HISTORY:
-                    state["messages"].append({"type": "history", "text": msg["text"]})
 
                 if len(state["messages"]) > 50:
                     state["messages"] = state["messages"][-50:]
@@ -155,11 +141,26 @@ class AuctionHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(resp.encode())
 
+        elif parsed.path == '/api/join':
+            params = parse_qs(parsed.query)
+            name = params.get('name', ['Anonyme'])[0]
+            if sock:
+                data = encode_msg(MSG_JOIN, name=name, room=state["room"])
+                sock.send(data)
+                with state_lock:
+                    state["pseudo"] = name
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(b'{"ok":true}')
+
         elif parsed.path == '/api/bid':
             params = parse_qs(parsed.query)
             amount = int(params.get('amount', [0])[0])
+            name = params.get('name', [state["pseudo"]])[0]
             if amount > 0 and sock:
-                data = encode_msg(MSG_BID, amount=amount, room=state["room"])
+                data = encode_msg(MSG_BID, name=name, amount=amount, room=state["room"])
                 sock.send(data)
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
@@ -193,24 +194,22 @@ def main():
     room         = int(sys.argv[4]) - 1 if len(sys.argv) > 4 else 0
 
     state["room"] = room
-    bot_name = f"Web_{int(time.time()) % 1000}"
 
-    print(f"[WEB] Connexion au serveur d'encheres {auction_ip}:{auction_port} (salle {room+1})")
+    print(f"[WEB] Connexion au serveur {auction_ip}:{auction_port}")
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.connect((auction_ip, auction_port))
 
-    join_msg = encode_msg(MSG_JOIN, name=bot_name, room=room)
+    join_msg = encode_msg(MSG_JOIN, name="Web_Client", room=room)
     sock.send(join_msg)
 
-    print(f"[WEB] Connecte comme '{bot_name}'")
+    print(f"[WEB] Connecte")
 
     t = threading.Thread(target=receiver_thread, daemon=True)
     t.start()
 
     server = HTTPServer(('0.0.0.0', web_port), AuctionHandler)
     print(f"[WEB] Interface web sur http://0.0.0.0:{web_port}")
-    print(f"[WEB] Ouvrez dans le navigateur : http://localhost:{web_port}")
 
     try:
         server.serve_forever()

@@ -38,3 +38,381 @@ Resultat   : Invendu
 Historique des mises :
 ══════════════════════════════════════════
 
+══════════════════════════════════════════
+Date       : 2026-05-07 10:44:59
+Salle      : 3
+Article    : daly
+Prix depart: 0 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 10:44:59
+Salle      : 4
+Article    : daly
+Prix depart: 0 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 10:44:59
+Salle      : 2
+Article    : daly
+Prix depart: 0 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 10:45:50
+Salle      : 1
+Article    : daly
+Prix depart: 0 DT
+Gagnant    : Anonyme
+Prix final : 1000 DT
+
+Historique des mises :
+  10:44:47  daly          11 DT
+  10:44:52  daly          115 DT
+  10:45:20  Anonyme       1000 DT
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 10:46:07
+Salle      : 4
+Article    : daldola
+Prix depart: 0 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 10:46:07
+Salle      : 3
+Article    : daldola
+Prix depart: 0 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 10:46:07
+Salle      : 2
+Article    : daldola
+Prix depart: 0 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 10:47:19
+Salle      : 1
+Article    : daldola
+Prix depart: 0 DT
+Gagnant    : Omar
+Prix final : 1000 DT
+
+Historique des mises :
+  10:46:49  daly          10 DT
+  10:46:51  daly          100 DT
+  10:47:06  Omar          1000 DT
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 10:49:15
+Salle      : 3
+Article    : mercedes
+Prix depart: 0 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 10:49:15
+Salle      : 2
+Article    : mercedes
+Prix depart: 0 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 10:49:15
+Salle      : 4
+Article    : mercedes
+Prix depart: 0 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 10:49:43
+Salle      : 1
+Article    : mercedes
+Prix depart: 0 DT
+Gagnant    : Omar
+Prix final : 1000 DT
+
+Historique des mises :
+  10:48:29  daly          10 DT
+  10:48:35  daly          155 DT
+  10:49:14  Omar          1000 DT
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 10:50:23
+Salle      : 4
+Article    : bmw
+Prix depart: 0 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 10:50:23
+Salle      : 3
+Article    : bmw
+Prix depart: 0 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 10:50:23
+Salle      : 2
+Article    : bmw
+Prix depart: 0 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 10:50:51
+Salle      : 1
+Article    : bmw
+Prix depart: 0 DT
+Gagnant    : Omar
+Prix final : 1000 DT
+
+Historique des mises :
+  10:50:25  Omar          1000 DT
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 11:02:15
+Salle      : 2
+Article    : uki
+Prix depart: 54 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 11:02:15
+Salle      : 3
+Article    : uki
+Prix depart: 54 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 11:02:15
+Salle      : 4
+Article    : uki
+Prix depart: 54 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 11:02:15
+Salle      : 1
+Article    : uki
+Prix depart: 54 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 11:03:23
+Salle      : 2
+Article    : ki
+Prix depart: 25 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 11:03:23
+Salle      : 3
+Article    : ki
+Prix depart: 25 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 11:03:23
+Salle      : 4
+Article    : ki
+Prix depart: 25 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 11:03:23
+Salle      : 1
+Article    : ki
+Prix depart: 25 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 11:09:09
+Salle      : 4
+Article    : eded
+Prix depart: 11 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 11:09:09
+Salle      : 3
+Article    : eded
+Prix depart: 11 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 11:09:09
+Salle      : 2
+Article    : eded
+Prix depart: 11 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 11:09:09
+Salle      : 1
+Article    : eded
+Prix depart: 11 DT
+Gagnant    : WebBridge
+Prix final : 140 DT
+
+Historique des mises :
+  11:08:30  WebBridge     30 DT
+  11:08:43  WebBridge     90 DT
+  11:08:44  WebBridge     140 DT
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 11:10:17
+Salle      : 3
+Article    : dedede
+Prix depart: 8595 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 11:10:17
+Salle      : 2
+Article    : dedede
+Prix depart: 8595 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 11:10:17
+Salle      : 1
+Article    : dedede
+Prix depart: 8595 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 11:10:17
+Salle      : 4
+Article    : dedede
+Prix depart: 8595 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 11:11:25
+Salle      : 1
+Article    : deded
+Prix depart: 58985 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 11:11:25
+Salle      : 2
+Article    : deded
+Prix depart: 58985 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 11:11:25
+Salle      : 3
+Article    : deded
+Prix depart: 58985 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 11:11:25
+Salle      : 4
+Article    : deded
+Prix depart: 58985 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+

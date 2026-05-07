@@ -14,10 +14,49 @@
             padding: 20px;
         }
         .container { max-width: 900px; margin: 0 auto; }
-        header {
-            text-align: center;
-            padding: 30px 0;
+
+        /* Login */
+        #login-screen {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 80vh;
+            gap: 20px;
         }
+        #login-screen h1 {
+            font-size: 2rem;
+            background: linear-gradient(90deg, #f7971e, #ffd200);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        #login-screen input {
+            background: rgba(255,255,255,0.1);
+            border: 2px solid rgba(255,255,255,0.2);
+            border-radius: 10px;
+            padding: 14px 20px;
+            font-size: 1.2rem;
+            color: #fff;
+            width: 280px;
+            text-align: center;
+            outline: none;
+        }
+        #login-screen input:focus { border-color: #ffd200; }
+        #login-screen button {
+            background: linear-gradient(135deg, #f7971e, #ffd200);
+            border: none;
+            border-radius: 10px;
+            padding: 14px 40px;
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #1a1a2e;
+            cursor: pointer;
+            width: 280px;
+        }
+
+        /* Main */
+        #main-screen { display: none; }
+        header { text-align: center; padding: 30px 0; }
         header h1 {
             font-size: 2rem;
             background: linear-gradient(90deg, #f7971e, #ffd200);
@@ -26,6 +65,7 @@
             margin-bottom: 5px;
         }
         header .subtitle { color: #888; font-size: 0.9rem; }
+        header .myname { color: #ffd200; font-size: 1rem; margin-top: 8px; }
 
         .stats-bar {
             display: flex;
@@ -42,11 +82,7 @@
             text-align: center;
             min-width: 140px;
         }
-        .stat .value {
-            font-size: 1.6rem;
-            font-weight: 700;
-            color: #ffd200;
-        }
+        .stat .value { font-size: 1.6rem; font-weight: 700; color: #ffd200; }
         .stat .label { font-size: 0.75rem; color: #888; margin-top: 4px; }
         .stat.timer .value { color: #ff6b6b; }
         .stat.balance .value { color: #51cf66; }
@@ -66,10 +102,7 @@
             color: #fff;
             margin-bottom: 10px;
         }
-        .auction-card .leader {
-            color: #ffd200;
-            font-size: 1rem;
-        }
+        .auction-card .leader { color: #ffd200; font-size: 1rem; }
 
         .bid-section {
             display: flex;
@@ -89,7 +122,6 @@
             width: 180px;
             text-align: center;
             outline: none;
-            transition: border-color 0.3s;
         }
         .bid-section input:focus { border-color: #ffd200; }
         .bid-section button {
@@ -101,11 +133,16 @@
             font-weight: 700;
             color: #1a1a2e;
             cursor: pointer;
-            transition: transform 0.2s, opacity 0.2s;
+            transition: transform 0.2s;
         }
         .bid-section button:hover { transform: scale(1.05); }
-        .bid-section button:active { transform: scale(0.95); }
-        .quick-bids { display: flex; gap: 8px; justify-content: center; margin-bottom: 15px; }
+        .quick-bids {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
         .quick-bids button {
             background: rgba(255,255,255,0.1);
             border: 1px solid rgba(255,255,255,0.2);
@@ -180,58 +217,94 @@
     </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>Enchères en Temps Réel</h1>
-            <p class="subtitle">Interface Web — Rafraîchissement automatique</p>
-        </header>
+    <!-- Ecran de connexion -->
+    <div id="login-screen">
+        <h1>🏷️ Enchères en Temps Réel</h1>
+        <p style="color:#888">Entrez votre pseudo pour participer</p>
+        <input type="text" id="pseudo-input" placeholder="Votre pseudo" maxlength="30">
+        <button onclick="joinAuction()">REJOINDRE L'ENCHÈRE</button>
+    </div>
 
-        <div class="stats-bar">
-            <div class="stat timer">
-                <div class="value" id="timer">--</div>
-                <div class="label">Secondes</div>
+    <!-- Ecran principal -->
+    <div id="main-screen">
+        <div class="container">
+            <header>
+                <h1>🏷️ Enchères en Temps Réel</h1>
+                <p class="subtitle">Rafraîchissement automatique toutes les secondes</p>
+                <p class="myname" id="myname"></p>
+            </header>
+
+            <div class="stats-bar">
+                <div class="stat timer">
+                    <div class="value" id="timer">--</div>
+                    <div class="label">Secondes</div>
+                </div>
+                <div class="stat">
+                    <div class="value" id="price">0 DT</div>
+                    <div class="label">Prix actuel</div>
+                </div>
+                <div class="stat balance">
+                    <div class="value" id="balance">1000 DT</div>
+                    <div class="label">Mon solde</div>
+                </div>
+                <div class="stat connected">
+                    <div class="value" id="connected">0</div>
+                    <div class="label">Connectés</div>
+                </div>
             </div>
-            <div class="stat">
-                <div class="value" id="price">0 DT</div>
-                <div class="label">Prix actuel</div>
+
+            <div class="auction-card">
+                <div class="item-name" id="item-name">En attente...</div>
+                <div class="leader" id="leader">Meneur : aucun</div>
             </div>
-            <div class="stat balance">
-                <div class="value" id="balance">1000 DT</div>
-                <div class="label">Mon solde</div>
+
+            <div id="winner-section"></div>
+
+            <div class="quick-bids" id="quick-bids"></div>
+
+            <div class="bid-section">
+                <input type="number" id="bid-input" placeholder="Montant (DT)" min="1">
+                <button onclick="placeBid()">MISER</button>
             </div>
-            <div class="stat connected">
-                <div class="value" id="connected">0</div>
-                <div class="label">Connectés</div>
+
+            <div class="history">
+                <h3>Historique des mises</h3>
+                <div id="history-list"></div>
             </div>
-        </div>
 
-        <div class="auction-card">
-            <div class="item-name" id="item-name">En attente...</div>
-            <div class="leader" id="leader">Meneur : aucun</div>
-        </div>
-
-        <div id="winner-section"></div>
-
-        <div class="quick-bids" id="quick-bids"></div>
-
-        <div class="bid-section">
-            <input type="number" id="bid-input" placeholder="Montant (DT)" min="1">
-            <button onclick="placeBid()">MISER</button>
-        </div>
-
-        <div class="history">
-            <h3>Historique des mises</h3>
-            <div id="history-list"></div>
-        </div>
-
-        <div class="messages">
-            <h3>Messages</h3>
-            <div id="msg-list"></div>
+            <div class="messages">
+                <h3>Messages</h3>
+                <div id="msg-list"></div>
+            </div>
         </div>
     </div>
 
     <script>
+        let myPseudo = '';
         let lastMsgCount = 0;
+
+        function joinAuction() {
+            const input = document.getElementById('pseudo-input');
+            const name = input.value.trim();
+            if (name.length === 0) {
+                input.style.borderColor = '#ff6b6b';
+                return;
+            }
+            myPseudo = name;
+
+            // Envoyer le pseudo au serveur web
+            fetch('/api/join?name=' + encodeURIComponent(name))
+                .then(() => {
+                    document.getElementById('login-screen').style.display = 'none';
+                    document.getElementById('main-screen').style.display = 'block';
+                    document.getElementById('myname').textContent = 'Connecté en tant que : ' + name;
+                    fetchState();
+                });
+        }
+
+        document.getElementById('pseudo-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') joinAuction();
+        });
 
         async function fetchState() {
             try {
@@ -245,26 +318,24 @@
                 document.getElementById('item-name').textContent = s.item || 'En attente...';
                 document.getElementById('leader').textContent = 'Meneur : ' + (s.leader || 'aucun');
 
-                // Quick bid buttons
+                // Boutons mise rapide
                 const minBid = s.current_price + 10;
                 const qb = document.getElementById('quick-bids');
                 qb.innerHTML = '';
                 [minBid, minBid + 20, minBid + 50, minBid + 100].forEach(v => {
-                    if (v <= s.balance) {
-                        const btn = document.createElement('button');
-                        btn.textContent = v + ' DT';
-                        btn.onclick = () => placeBidAmount(v);
-                        qb.appendChild(btn);
-                    }
+                    const btn = document.createElement('button');
+                    btn.textContent = v + ' DT';
+                    btn.onclick = () => placeBidAmount(v);
+                    qb.appendChild(btn);
                 });
 
-                // Timer color
+                // Couleur timer
                 const timerEl = document.getElementById('timer');
                 if (s.time_left <= 5) timerEl.style.color = '#ff0000';
                 else if (s.time_left <= 10) timerEl.style.color = '#ff6b6b';
                 else timerEl.style.color = '#ff6b6b';
 
-                // Winner
+                // Gagnant
                 const ws = document.getElementById('winner-section');
                 if (s.winner) {
                     ws.innerHTML = `<div class="winner-banner"><h2>🏆 ${s.winner.text}</h2></div>`;
@@ -272,7 +343,7 @@
                     ws.innerHTML = '';
                 }
 
-                // History
+                // Historique
                 const hl = document.getElementById('history-list');
                 hl.innerHTML = s.history.slice(-15).reverse().map(h =>
                     `<div class="history-item">
@@ -297,7 +368,7 @@
         }
 
         async function placeBidAmount(amount) {
-            await fetch('/api/bid?amount=' + amount);
+            await fetch('/api/bid?amount=' + amount + '&name=' + encodeURIComponent(myPseudo));
         }
 
         function placeBid() {
@@ -314,7 +385,8 @@
         });
 
         setInterval(fetchState, 1000);
-        fetchState();
     </script>
 </body>
 </html>
+
+
