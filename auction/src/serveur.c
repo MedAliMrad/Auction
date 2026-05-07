@@ -1,18 +1,15 @@
 /*
- * serveur.c — Serveur d'enchères en temps réel
+ * serveur.c — Serveur d'enchères en temps réel (version complète)
  *
- * Architecture :
- *   main()           → socket TCP, accept() en boucle
- *   handle_client()  → 1 thread par client (reçoit les mises)
- *   timer_thread()   → compte à rebours, ferme l'enchère
- *   broadcast()      → envoie un message à TOUS les clients connectés
- *
- * Synchronisation :
- *   clients_mutex  → protège la liste des clients
- *   auction_mutex  → protège le prix courant + gagnant actuel
- *
- * Compilation : gcc -Wall -o bin/serveur src/serveur.c -lpthread
- * Lancement   : ./bin/serveur [port]   (défaut : 8080)
+ * Fonctionnalités :
+ *   - Plusieurs articles enchaînés automatiquement
+ *   - Nombre de connectés affiché en temps réel
+ *   - Mise minimum automatique (+10 DT)
+ *   - Historique des mises horodaté
+ *   - Système de solde (1000 DT par client)
+ *   - Extension du timer si mise dans les 10 dernières secondes
+ *   - Salles d'enchères multiples
+ *   - Sauvegarde des résultats dans resultats.txt
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,53 +22,79 @@
 #include <sys/types.h>
 
 #include <pthread.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <signal.h>
 #include "../include/common.h"
 
 /* ══════════════════════════════════════════════════
-   Structure client (un slot dans le tableau global)
+   Structures
    ══════════════════════════════════════════════════ */
 typedef struct {
-    int    fd;                    /* socket de ce client          */
-    int    active;                /* 1 = connecté                 */
-    char   name[MAX_NAME_LEN];    /* pseudo choisi à la connexion */
-    char   ip[INET_ADDRSTRLEN];   /* IP distante (pour les logs)  */
+    int      fd;
+    int      active;
+    char     name[MAX_NAME_LEN];
+    char     ip[INET_ADDRSTRLEN];
+    uint32_t balance;
+    uint8_t  room;
 } Client;
 
-/* ══════════════════════════════════════════════════
-   État global de l'enchère
-   ══════════════════════════════════════════════════ */
 typedef struct {
-    char     item[MAX_ITEM_LEN];  /* article en vente             */
-    uint32_t start_price;         /* prix de départ               */
-    uint32_t current_price;       /* meilleure mise courante      */
-    char     best_bidder[MAX_NAME_LEN]; /* nom du meneur          */
-    int      running;             /* enchère en cours ?           */
-    int      time_left;           /* secondes restantes           */
+    char     bidder[MAX_NAME_LEN];
+    uint32_t amount;
+    char     timestamp[10];
+} BidRecord;
+
+typedef struct {
+    char       item[MAX_ITEM_LEN];
+    uint32_t   start_price;
+    uint32_t   current_price;
+    char       best_bidder[MAX_NAME_LEN];
+    int        running;
+    int        time_left;
+    BidRecord  history[MAX_HISTORY];
+    int        history_count;
 } Auction;
+
+typedef struct {
+    char     name[MAX_ITEM_LEN];
+    uint32_t start_price;
+} ItemDef;
 
 /* ─── Données partagées ──────────────────────────── */
 static Client  clients[MAX_CLIENTS];
 static pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-static Auction auction;
-static pthread_mutex_t auction_mutex = PTHREAD_MUTEX_INITIALIZER;
+static Auction rooms[NUM_ROOMS];
+static pthread_mutex_t room_mutex[NUM_ROOMS];
 
 static int listen_fd   = -1;
 static int server_port = DEFAULT_PORT;
 
+static ItemDef item_list[MAX_ITEMS];
+static int     item_count = 0;
+static int     current_item_index[NUM_ROOMS];
+
 /* ══════════════════════════════════════════════════
-   broadcast() — envoie msg à tous les clients actifs
-   DOIT être appelé avec clients_mutex déjà acquis
+   Helpers
    ══════════════════════════════════════════════════ */
-static void broadcast(const Message *msg) {
+static int count_connected(int room) {
+    int c = 0;
+    for (int i = 0; i < MAX_CLIENTS; i++)
+        if (clients[i].active && clients[i].room == room)
+            c++;
+    return c;
+}
+
+static int count_all_connected(void) {
+    int c = 0;
+    for (int i = 0; i < MAX_CLIENTS; i++)
+        if (clients[i].active) c++;
+    return c;
+}
+
+static void broadcast_room(int room, const Message *msg) {
     for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (clients[i].active) {
+        if (clients[i].active && clients[i].room == room) {
             if (send(clients[i].fd, msg, sizeof(*msg), MSG_NOSIGNAL) < 0) {
-                /* client perdu, on le marque inactif */
                 clients[i].active = 0;
                 close(clients[i].fd);
             }
@@ -79,96 +102,279 @@ static void broadcast(const Message *msg) {
     }
 }
 
-/* ══════════════════════════════════════════════════
-   send_to() — envoie uniquement à un client
-   ══════════════════════════════════════════════════ */
+__attribute__((unused))
+static void broadcast_all(const Message *msg) {
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (clients[i].active) {
+            if (send(clients[i].fd, msg, sizeof(*msg), MSG_NOSIGNAL) < 0) {
+                clients[i].active = 0;
+                close(clients[i].fd);
+            }
+        }
+    }
+}
+
 static void send_to(int fd, const Message *msg) {
     send(fd, msg, sizeof(*msg), MSG_NOSIGNAL);
 }
 
-/* ══════════════════════════════════════════════════
-   announce_auction() — informe tous les connectés
-   ══════════════════════════════════════════════════ */
-static void announce_auction(void) {
+static void broadcast_connected_count(int room) {
     Message m = {0};
-    m.type = MSG_AUCTION_INFO;
-    strncpy(m.item, auction.item, MAX_ITEM_LEN - 1);
-    m.amount = auction.start_price;
+    m.type   = MSG_CONNECTED;
+    m.room   = (uint8_t)room;
+    m.amount = (uint32_t)count_connected(room);
+    snprintf(m.text, BUFFER_SIZE, "%d encherisseur(s) connecte(s) dans la salle %d",
+             m.amount, room + 1);
+    broadcast_room(room, &m);
+}
+
+static void save_result(int room) {
+    Auction *a = &rooms[room];
+    FILE *f = fopen(RESULTS_FILE, "a");
+    if (!f) return;
+
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    char ts[32];
+    strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", t);
+
+    fprintf(f, "══════════════════════════════════════════\n");
+    fprintf(f, "Date       : %s\n", ts);
+    fprintf(f, "Salle      : %d\n", room + 1);
+    fprintf(f, "Article    : %s\n", a->item);
+    fprintf(f, "Prix depart: %u DT\n", a->start_price);
+
+    if (strlen(a->best_bidder) > 0 && a->current_price > 0) {
+        fprintf(f, "Gagnant    : %s\n", a->best_bidder);
+        fprintf(f, "Prix final : %u DT\n", a->current_price);
+    } else {
+        fprintf(f, "Resultat   : Invendu\n");
+    }
+
+    fprintf(f, "\nHistorique des mises :\n");
+    for (int i = 0; i < a->history_count; i++) {
+        fprintf(f, "  %s  %-12s  %u DT\n",
+                a->history[i].timestamp,
+                a->history[i].bidder,
+                a->history[i].amount);
+    }
+    fprintf(f, "══════════════════════════════════════════\n\n");
+    fclose(f);
+}
+
+static void send_history(int fd, int room) {
+    Auction *a = &rooms[room];
+    Message m = {0};
+    m.type = MSG_HISTORY;
+    m.room = (uint8_t)room;
+
+    if (a->history_count == 0) {
+        snprintf(m.text, BUFFER_SIZE, "Aucune mise pour le moment.");
+        send_to(fd, &m);
+        return;
+    }
+
+    int start = a->history_count > 10 ? a->history_count - 10 : 0;
+    m.text[0] = '\0';
+    for (int i = start; i < a->history_count; i++) {
+        char line[80];
+        snprintf(line, sizeof(line), "%s  %-10s -> %u DT\n",
+                 a->history[i].timestamp,
+                 a->history[i].bidder,
+                 a->history[i].amount);
+        strncat(m.text, line, BUFFER_SIZE - strlen(m.text) - 1);
+    }
+    send_to(fd, &m);
+}
+
+/* ══════════════════════════════════════════════════
+   Announce auction state to a room
+   ══════════════════════════════════════════════════ */
+static void announce_auction(int room) {
+    Auction *a = &rooms[room];
+    Message m = {0};
+    m.type   = MSG_AUCTION_INFO;
+    m.room   = (uint8_t)room;
+    strncpy(m.item, a->item, MAX_ITEM_LEN - 1);
+    m.amount = a->start_price;
     snprintf(m.text, BUFFER_SIZE,
-             "=== NOUVELLE ENCHERE === Article : %s | Prix depart : %u DT | Duree : %d sec",
-             auction.item, auction.start_price, AUCTION_DURATION);
+             "=== SALLE %d === Article : %s | Prix depart : %u DT | Mise min +%d DT | Duree : %d sec",
+             room + 1, a->item, a->start_price, MIN_BID_INCREMENT, AUCTION_DURATION);
 
     pthread_mutex_lock(&clients_mutex);
-    broadcast(&m);
+    broadcast_room(room, &m);
     pthread_mutex_unlock(&clients_mutex);
 }
 
 /* ══════════════════════════════════════════════════
-   Thread TIMER — compte à rebours de l'enchère
+   Start next auction in a room
    ══════════════════════════════════════════════════ */
+static int start_next_auction(int room) {
+    int idx = current_item_index[room];
+    if (idx >= item_count) return 0;
+
+    Auction *a = &rooms[room];
+    strncpy(a->item, item_list[idx].name, MAX_ITEM_LEN - 1);
+    a->start_price   = item_list[idx].start_price;
+    a->current_price = 0;
+    memset(a->best_bidder, 0, MAX_NAME_LEN);
+    a->running       = 1;
+    a->time_left     = AUCTION_DURATION;
+    a->history_count = 0;
+    memset(a->history, 0, sizeof(a->history));
+
+    current_item_index[room]++;
+    return 1;
+}
+
+/* ══════════════════════════════════════════════════
+   Timer thread (one per room)
+   ══════════════════════════════════════════════════ */
+typedef struct { int room; } TimerArg;
+
 static void *timer_thread(void *arg) {
-    (void)arg;
-    log_msg("TIMER", "Compte a rebours demarre (%d secondes)", AUCTION_DURATION);
+    TimerArg *ta = (TimerArg *)arg;
+    int room = ta->room;
+    free(ta);
 
-    for (int t = AUCTION_DURATION; t >= 0; t--) {
-        /* mise à jour du temps restant */
-        pthread_mutex_lock(&auction_mutex);
-        auction.time_left = t;
-        pthread_mutex_unlock(&auction_mutex);
+    while (1) {
+        Auction *a = &rooms[room];
 
-        /* diffusion du timer toutes les 10 secondes + dernières 5 sec */
-        if (t % 10 == 0 || t <= 5) {
-            Message tm = {0};
-            tm.type   = MSG_TIMER;
-            tm.amount = (uint32_t)t;
-            snprintf(tm.text, BUFFER_SIZE, "Temps restant : %d secondes", t);
-            pthread_mutex_lock(&clients_mutex);
-            broadcast(&tm);
-            pthread_mutex_unlock(&clients_mutex);
+        pthread_mutex_lock(&room_mutex[room]);
+        if (!a->running) {
+            pthread_mutex_unlock(&room_mutex[room]);
+            break;
+        }
+        pthread_mutex_unlock(&room_mutex[room]);
 
-            if (t > 0)
-                log_msg("TIMER", "%d secondes restantes", t);
+        log_msg("TIMER", "Salle %d: Compte a rebours (%d sec) — Article: %s",
+                room + 1, AUCTION_DURATION, a->item);
+
+        announce_auction(room);
+
+        while (1) {
+            pthread_mutex_lock(&room_mutex[room]);
+            int t = a->time_left;
+            pthread_mutex_unlock(&room_mutex[room]);
+
+            if (t <= 0) break;
+
+            if (t % 10 == 0 || t <= 5) {
+                Message tm = {0};
+                tm.type   = MSG_TIMER;
+                tm.room   = (uint8_t)room;
+                tm.amount = (uint32_t)t;
+                snprintf(tm.text, BUFFER_SIZE, "Temps restant : %d secondes", t);
+                pthread_mutex_lock(&clients_mutex);
+                broadcast_room(room, &tm);
+                pthread_mutex_unlock(&clients_mutex);
+
+                if (t > 0)
+                    log_msg("TIMER", "Salle %d: %d sec restantes", room + 1, t);
+            }
+
+            sleep(1);
+
+            pthread_mutex_lock(&room_mutex[room]);
+            a->time_left--;
+            pthread_mutex_unlock(&room_mutex[room]);
         }
 
-        if (t == 0) break;
-        sleep(1);
+        /* Auction ended */
+        pthread_mutex_lock(&room_mutex[room]);
+        a->running = 0;
+        char winner_name[MAX_NAME_LEN] = {0};
+        uint32_t winning_price = a->current_price;
+        strncpy(winner_name, a->best_bidder, MAX_NAME_LEN - 1);
+        pthread_mutex_unlock(&room_mutex[room]);
+
+        /* Deduct balance from winner */
+        if (strlen(winner_name) > 0 && winning_price > 0) {
+            pthread_mutex_lock(&clients_mutex);
+            for (int i = 0; i < MAX_CLIENTS; i++) {
+                if (clients[i].active && strcmp(clients[i].name, winner_name) == 0) {
+                    if (clients[i].balance >= winning_price)
+                        clients[i].balance -= winning_price;
+                    else
+                        clients[i].balance = 0;
+
+                    Message bal = {0};
+                    bal.type    = MSG_BALANCE;
+                    bal.balance = clients[i].balance;
+                    snprintf(bal.text, BUFFER_SIZE,
+                             "Vous avez remporte l'enchere ! Solde restant : %u DT",
+                             clients[i].balance);
+                    send_to(clients[i].fd, &bal);
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&clients_mutex);
+        }
+
+        /* Broadcast winner */
+        Message win = {0};
+        win.type   = MSG_WINNER;
+        win.room   = (uint8_t)room;
+        win.amount = winning_price;
+
+        if (strlen(winner_name) == 0 || winning_price == 0) {
+            strncpy(win.name, "Personne", MAX_NAME_LEN - 1);
+            snprintf(win.text, BUFFER_SIZE,
+                     "ENCHERE TERMINEE - Aucune mise. Article \"%s\" invendu.", a->item);
+            log_msg("FIN", "Salle %d: Article invendu.", room + 1);
+        } else {
+            strncpy(win.name, winner_name, MAX_NAME_LEN - 1);
+            snprintf(win.text, BUFFER_SIZE,
+                     "GAGNANT : %s — Prix final : %u DT — FELICITATIONS !",
+                     winner_name, winning_price);
+            log_msg("FIN", "Salle %d: GAGNANT %s avec %u DT", room + 1, winner_name, winning_price);
+        }
+
+        pthread_mutex_lock(&clients_mutex);
+        broadcast_room(room, &win);
+        pthread_mutex_unlock(&clients_mutex);
+
+        /* Save to file */
+        save_result(room);
+
+        /* Start next auction or end */
+        sleep(5);
+
+        pthread_mutex_lock(&room_mutex[room]);
+        int has_next = start_next_auction(room);
+        pthread_mutex_unlock(&room_mutex[room]);
+
+        if (!has_next) {
+            Message end = {0};
+            end.type = MSG_CHAT;
+            end.room = (uint8_t)room;
+            snprintf(end.text, BUFFER_SIZE,
+                     "=== Toutes les encheres de la salle %d sont terminees ! ===", room + 1);
+            pthread_mutex_lock(&clients_mutex);
+            broadcast_room(room, &end);
+            pthread_mutex_unlock(&clients_mutex);
+            break;
+        } else {
+            Message next = {0};
+            next.type = MSG_NEXT_AUCTION;
+            next.room = (uint8_t)room;
+            snprintf(next.text, BUFFER_SIZE,
+                     ">>> Prochaine enchere dans 5 secondes... Article : %s",
+                     rooms[room].item);
+            pthread_mutex_lock(&clients_mutex);
+            broadcast_room(room, &next);
+            pthread_mutex_unlock(&clients_mutex);
+
+            log_msg("NEXT", "Salle %d: Prochain article — %s", room + 1, rooms[room].item);
+            sleep(3);
+        }
     }
-
-    /* ── Fermeture de l'enchère ── */
-    pthread_mutex_lock(&auction_mutex);
-    auction.running = 0;
-    char winner_name[MAX_NAME_LEN];
-    uint32_t winning_price;
-    strncpy(winner_name, auction.best_bidder, MAX_NAME_LEN - 1);
-    winning_price = auction.current_price;
-    pthread_mutex_unlock(&auction_mutex);
-
-    Message win = {0};
-    win.type   = MSG_WINNER;
-    win.amount = winning_price;
-
-    if (strlen(winner_name) == 0 || winning_price == 0) {
-        strncpy(win.name, "Personne", MAX_NAME_LEN - 1);
-        snprintf(win.text, BUFFER_SIZE,
-                 "ENCHERE TERMINEE - Aucune mise valide. Article invendu.");
-        log_msg("TIMER", "Aucune mise. Article invendu.");
-    } else {
-        strncpy(win.name, winner_name, MAX_NAME_LEN - 1);
-        snprintf(win.text, BUFFER_SIZE,
-                 "GAGNANT : %s - Prix final : %u DT  FELICITATIONS !",
-                 winner_name, winning_price);
-        log_msg("TIMER", "GAGNANT : %s avec %u DT", winner_name, winning_price);
-    }
-
-    pthread_mutex_lock(&clients_mutex);
-    broadcast(&win);
-    pthread_mutex_unlock(&clients_mutex);
 
     return NULL;
 }
 
 /* ══════════════════════════════════════════════════
-   Thread par CLIENT — reçoit et traite les messages
+   Handle a client connection
    ══════════════════════════════════════════════════ */
 typedef struct { int slot; } ClientArg;
 
@@ -180,54 +386,74 @@ static void *handle_client(void *arg) {
     int fd = clients[slot].fd;
     Message msg;
 
-    /* ── Attente du message MSG_JOIN (pseudo) ── */
+    /* Wait for MSG_JOIN */
     ssize_t n = recv(fd, &msg, sizeof(msg), 0);
     if (n <= 0 || msg.type != MSG_JOIN) {
         goto disconnect;
     }
 
-    /* enregistrement du pseudo */
     pthread_mutex_lock(&clients_mutex);
     strncpy(clients[slot].name, msg.name, MAX_NAME_LEN - 1);
+    clients[slot].balance = STARTING_BALANCE;
+    clients[slot].room    = msg.room < NUM_ROOMS ? msg.room : 0;
     pthread_mutex_unlock(&clients_mutex);
 
-    log_msg("JOIN", "%s (%s) a rejoint l'enchere", msg.name, clients[slot].ip);
+    int room = clients[slot].room;
 
-    /* informer tout le monde de l'arrivée */
+    log_msg("JOIN", "%s (%s) → salle %d [solde: %u DT]",
+            msg.name, clients[slot].ip, room + 1, STARTING_BALANCE);
+
+    /* Announce join to room */
     {
         Message info = {0};
         info.type = MSG_CHAT;
-        snprintf(info.text, BUFFER_SIZE, ">>> %s a rejoint l'enchere !", msg.name);
+        info.room = (uint8_t)room;
+        snprintf(info.text, BUFFER_SIZE, ">>> %s a rejoint la salle %d !", msg.name, room + 1);
         pthread_mutex_lock(&clients_mutex);
-        broadcast(&info);
+        broadcast_room(room, &info);
+        broadcast_connected_count(room);
         pthread_mutex_unlock(&clients_mutex);
     }
 
-    /* envoyer l'état actuel de l'enchère au nouveau connecté */
+    /* Send balance */
+    {
+        Message bal = {0};
+        bal.type    = MSG_BALANCE;
+        bal.balance = STARTING_BALANCE;
+        snprintf(bal.text, BUFFER_SIZE, "Votre solde : %u DT", STARTING_BALANCE);
+        send_to(fd, &bal);
+    }
+
+    /* Send current auction state */
     {
         Message info = {0};
         info.type = MSG_AUCTION_INFO;
-        pthread_mutex_lock(&auction_mutex);
-        strncpy(info.item, auction.item, MAX_ITEM_LEN - 1);
-        info.amount = auction.current_price > 0
-                      ? auction.current_price : auction.start_price;
+        info.room = (uint8_t)room;
+        pthread_mutex_lock(&room_mutex[room]);
+        Auction *a = &rooms[room];
+        strncpy(info.item, a->item, MAX_ITEM_LEN - 1);
+        info.amount = a->current_price > 0 ? a->current_price : a->start_price;
         snprintf(info.text, BUFFER_SIZE,
-                 "Article : %s | Meilleure mise : %u DT par [%s] | Temps restant : %d sec",
-                 auction.item,
-                 info.amount,
-                 strlen(auction.best_bidder) ? auction.best_bidder : "aucun",
-                 auction.time_left);
-        pthread_mutex_unlock(&auction_mutex);
+                 "Article : %s | Mise actuelle : %u DT par [%s] | Temps : %d sec | Min +%d DT",
+                 a->item, info.amount,
+                 strlen(a->best_bidder) ? a->best_bidder : "aucun",
+                 a->time_left, MIN_BID_INCREMENT);
+        pthread_mutex_unlock(&room_mutex[room]);
         send_to(fd, &info);
     }
 
-    /* ── Boucle de réception des mises ── */
+    /* Send bid history */
+    pthread_mutex_lock(&room_mutex[room]);
+    send_history(fd, room);
+    pthread_mutex_unlock(&room_mutex[room]);
+
+    /* ── Bid reception loop ── */
     while (1) {
         n = recv(fd, &msg, sizeof(msg), 0);
         if (n <= 0) break;
 
         if (msg.type == MSG_BYE) {
-            log_msg("BYE", "%s s'est deconnecte proprement", clients[slot].name);
+            log_msg("BYE", "%s deconnecte", clients[slot].name);
             break;
         }
 
@@ -235,63 +461,115 @@ static void *handle_client(void *arg) {
             uint32_t offered = msg.amount;
             Message  reply   = {0};
 
-            pthread_mutex_lock(&auction_mutex);
+            pthread_mutex_lock(&room_mutex[room]);
+            Auction *a = &rooms[room];
 
-            int valid = auction.running
-                     && offered > auction.current_price
-                     && offered > auction.start_price;
+            uint32_t min_required = a->current_price > 0
+                ? a->current_price + MIN_BID_INCREMENT
+                : a->start_price + MIN_BID_INCREMENT;
+
+            int valid = a->running && offered >= min_required;
+
+            /* Check balance */
+            pthread_mutex_lock(&clients_mutex);
+            uint32_t bal = clients[slot].balance;
+            pthread_mutex_unlock(&clients_mutex);
+
+            if (valid && offered > bal) {
+                valid = 0;
+                reply.type = MSG_BID_REJECT;
+                reply.amount = a->current_price;
+                reply.balance = bal;
+                snprintf(reply.text, BUFFER_SIZE,
+                         "Solde insuffisant (%u DT). Vous ne pouvez pas miser %u DT.",
+                         bal, offered);
+                pthread_mutex_unlock(&room_mutex[room]);
+                send_to(fd, &reply);
+                continue;
+            }
 
             if (valid) {
-                auction.current_price = offered;
-                strncpy(auction.best_bidder, clients[slot].name, MAX_NAME_LEN - 1);
+                a->current_price = offered;
+                strncpy(a->best_bidder, clients[slot].name, MAX_NAME_LEN - 1);
 
-                /* MSG_BID_OK → uniquement à l'expéditeur */
-                reply.type   = MSG_BID_OK;
-                reply.amount = offered;
+                /* Record in history */
+                if (a->history_count < MAX_HISTORY) {
+                    BidRecord *rec = &a->history[a->history_count++];
+                    strncpy(rec->bidder, clients[slot].name, MAX_NAME_LEN - 1);
+                    rec->amount = offered;
+                    time_t now = time(NULL);
+                    struct tm *tm_now = localtime(&now);
+                    strftime(rec->timestamp, sizeof(rec->timestamp), "%H:%M:%S", tm_now);
+                }
+
+                /* Timer extension */
+                if (a->time_left <= TIMER_THRESHOLD) {
+                    a->time_left = TIMER_EXTENSION;
+                    log_msg("TIMER", "Salle %d: Extension! Timer remis a %d sec",
+                            room + 1, TIMER_EXTENSION);
+
+                    Message ext = {0};
+                    ext.type   = MSG_CHAT;
+                    ext.room   = (uint8_t)room;
+                    snprintf(ext.text, BUFFER_SIZE,
+                             "⏱ Mise tardive ! Timer etendu a %d secondes.", TIMER_EXTENSION);
+                    pthread_mutex_lock(&clients_mutex);
+                    broadcast_room(room, &ext);
+                    pthread_mutex_unlock(&clients_mutex);
+                }
+
+                pthread_mutex_unlock(&room_mutex[room]);
+
+                /* BID_OK to sender */
+                reply.type    = MSG_BID_OK;
+                reply.amount  = offered;
+                reply.balance = bal;
                 snprintf(reply.text, BUFFER_SIZE,
-                         "Votre mise de %u DT est acceptee ! Vous etes le meneur.", offered);
+                         "Mise de %u DT acceptee ! Vous menez.", offered);
                 send_to(fd, &reply);
 
-                /* MSG_UPDATE → diffusion à tous */
+                /* UPDATE broadcast */
                 Message upd = {0};
                 upd.type   = MSG_UPDATE;
+                upd.room   = (uint8_t)room;
                 upd.amount = offered;
                 strncpy(upd.name, clients[slot].name, MAX_NAME_LEN - 1);
                 snprintf(upd.text, BUFFER_SIZE,
-                         "NOUVELLE MISE : %s --> %u DT", clients[slot].name, offered);
-                pthread_mutex_unlock(&auction_mutex);
+                         "NOUVELLE MISE : %s → %u DT", clients[slot].name, offered);
 
-                log_msg("BID", "%s mise %u DT", clients[slot].name, offered);
+                log_msg("BID", "Salle %d: %s mise %u DT", room + 1, clients[slot].name, offered);
 
                 pthread_mutex_lock(&clients_mutex);
-                broadcast(&upd);
+                broadcast_room(room, &upd);
                 pthread_mutex_unlock(&clients_mutex);
 
             } else {
-                /* mise refusée */
-                reply.type   = MSG_BID_REJECT;
-                reply.amount = auction.current_price;
-                if (!auction.running) {
+                reply.type    = MSG_BID_REJECT;
+                reply.amount  = a->current_price;
+                reply.balance = bal;
+                if (!a->running) {
                     snprintf(reply.text, BUFFER_SIZE,
-                             "Enchere terminee, aucune mise acceptee.");
+                             "Enchere terminee. Aucune mise acceptee.");
                 } else {
                     snprintf(reply.text, BUFFER_SIZE,
-                             "Mise refusee. Vous devez depasser %u DT.",
-                             auction.current_price > 0
-                             ? auction.current_price : auction.start_price);
+                             "Mise refusee. Minimum requis : %u DT (actuelle %u + %d).",
+                             min_required,
+                             a->current_price > 0 ? a->current_price : a->start_price,
+                             MIN_BID_INCREMENT);
                 }
-                pthread_mutex_unlock(&auction_mutex);
+                pthread_mutex_unlock(&room_mutex[room]);
                 send_to(fd, &reply);
             }
         }
     }
 
 disconnect:
-    /* nettoyage du slot */
     {
-        char name_copy[MAX_NAME_LEN];
+        char name_copy[MAX_NAME_LEN] = {0};
+        int r;
         pthread_mutex_lock(&clients_mutex);
         strncpy(name_copy, clients[slot].name, MAX_NAME_LEN - 1);
+        r = clients[slot].room;
         clients[slot].active = 0;
         close(clients[slot].fd);
         pthread_mutex_unlock(&clients_mutex);
@@ -299,9 +577,11 @@ disconnect:
         if (strlen(name_copy)) {
             Message bye_msg = {0};
             bye_msg.type = MSG_CHAT;
-            snprintf(bye_msg.text, BUFFER_SIZE, "<<< %s a quitte l'enchere.", name_copy);
+            bye_msg.room = (uint8_t)r;
+            snprintf(bye_msg.text, BUFFER_SIZE, "<<< %s a quitte la salle.", name_copy);
             pthread_mutex_lock(&clients_mutex);
-            broadcast(&bye_msg);
+            broadcast_room(r, &bye_msg);
+            broadcast_connected_count(r);
             pthread_mutex_unlock(&clients_mutex);
         }
     }
@@ -309,7 +589,7 @@ disconnect:
 }
 
 /* ══════════════════════════════════════════════════
-   Gestion SIGINT propre
+   SIGINT handler
    ══════════════════════════════════════════════════ */
 static void handle_sigint(int sig) {
     (void)sig;
@@ -320,40 +600,52 @@ static void handle_sigint(int sig) {
 }
 
 /* ══════════════════════════════════════════════════
-   Saisie de l'article (depuis le terminal du serveur)
+   Setup: enter items from terminal
    ══════════════════════════════════════════════════ */
-static void setup_auction(void) {
+static void setup_items(void) {
     char buf[MAX_ITEM_LEN];
     uint32_t price;
 
     printf("\n");
-    printf("╔══════════════════════════════════════╗\n");
-    printf("║   SERVEUR D'ENCHERES EN TEMPS REEL   ║\n");
-    printf("╚══════════════════════════════════════╝\n\n");
+    printf("╔══════════════════════════════════════════════╗\n");
+    printf("║   SERVEUR D'ENCHERES EN TEMPS REEL v2.0      ║\n");
+    printf("╠══════════════════════════════════════════════╣\n");
+    printf("║  Nouveautes:                                 ║\n");
+    printf("║  • Encheres multiples enchainées             ║\n");
+    printf("║  • Solde par joueur (%4d DT)                ║\n", STARTING_BALANCE);
+    printf("║  • Mise minimum +%d DT                       ║\n", MIN_BID_INCREMENT);
+    printf("║  • Extension timer si mise tardive           ║\n");
+    printf("║  • %d salles paralleles                      ║\n", NUM_ROOMS);
+    printf("║  • Historique + resultats.txt                ║\n");
+    printf("╚══════════════════════════════════════════════╝\n\n");
 
-    printf("  Article a vendre : ");
+    printf("  Combien d'articles a vendre ? (1-%d) : ", MAX_ITEMS);
     fflush(stdout);
-    if (fgets(buf, sizeof(buf), stdin)) {
-        buf[strcspn(buf, "\n")] = '\0';
-        strncpy(auction.item, buf, MAX_ITEM_LEN - 1);
+    int count = 0;
+    if (scanf("%d", &count) != 1 || count < 1) count = 1;
+    if (count > MAX_ITEMS) count = MAX_ITEMS;
+    while (getchar() != '\n');
+
+    for (int i = 0; i < count; i++) {
+        printf("\n  --- Article %d/%d ---\n", i + 1, count);
+        printf("  Nom : ");
+        fflush(stdout);
+        if (fgets(buf, sizeof(buf), stdin)) {
+            buf[strcspn(buf, "\n")] = '\0';
+            strncpy(item_list[i].name, buf, MAX_ITEM_LEN - 1);
+        }
+        printf("  Prix de depart (DT) : ");
+        fflush(stdout);
+        if (scanf("%u", &price) == 1)
+            item_list[i].start_price = price;
+        else
+            item_list[i].start_price = 10;
+        while (getchar() != '\n');
     }
+    item_count = count;
 
-    printf("  Prix de depart (DT) : ");
-    fflush(stdout);
-    if (scanf("%u", &price) == 1)
-        auction.start_price = price;
-    else
-        auction.start_price = 1;
-    while (getchar() != '\n'); /* vider le buffer */
-
-    auction.current_price = 0;
-    memset(auction.best_bidder, 0, MAX_NAME_LEN);
-    auction.running   = 1;
-    auction.time_left = AUCTION_DURATION;
-
-    printf("\n");
-    log_msg("SERVER", "Enchere configuree : \"%s\" | Depart : %u DT | Duree : %ds",
-            auction.item, auction.start_price, AUCTION_DURATION);
+    printf("\n  %d article(s) configure(s).\n", item_count);
+    printf("  Les encheres commencent dans toutes les salles.\n\n");
 }
 
 /* ══════════════════════════════════════════════════
@@ -371,22 +663,27 @@ int main(int argc, char *argv[]) {
     }
     atexit(platform_network_cleanup);
 
-#ifdef _WIN32
-    platform_mutex_init(&clients_mutex);
-    platform_mutex_init(&auction_mutex);
-#endif
-
-    signal(SIGINT,  handle_sigint);
+    signal(SIGINT, handle_sigint);
 #ifndef _WIN32
-    signal(SIGPIPE, SIG_IGN);      /* évite le crash sur client déconnecté */
+    signal(SIGPIPE, SIG_IGN);
 #endif
 
     memset(clients, 0, sizeof(clients));
+    memset(rooms, 0, sizeof(rooms));
 
-    /* ── Saisie de l'article ── */
-    setup_auction();
+    for (int i = 0; i < NUM_ROOMS; i++)
+        pthread_mutex_init(&room_mutex[i], NULL);
 
-    /* ── Socket TCP ── */
+    /* Setup items */
+    setup_items();
+
+    /* Initialize all rooms with the first item */
+    for (int i = 0; i < NUM_ROOMS; i++) {
+        current_item_index[i] = 0;
+        start_next_auction(i);
+    }
+
+    /* TCP socket */
     listen_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (listen_fd < 0) { perror("socket"); return 1; }
     setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
@@ -400,22 +697,27 @@ int main(int argc, char *argv[]) {
         perror("bind"); return 1;
     }
     listen(listen_fd, 16);
-    log_msg("SERVER", "En ecoute sur le port %d — En attente de clients...", server_port);
-    log_msg("SERVER", "Lancez les clients avec : ./bin/client <IP_SERVEUR> %d", server_port);
 
-    /* ── Thread timer ── */
-    pthread_t timer_tid;
-    pthread_create(&timer_tid, NULL, timer_thread, NULL);
-    pthread_detach(timer_tid);
+    log_msg("SERVER", "En ecoute sur le port %d — %d salle(s) — %d article(s)",
+            server_port, NUM_ROOMS, item_count);
+    log_msg("SERVER", "Clients: ./bin/client <IP> %d", server_port);
 
-    /* ── Boucle accept ── */
+    /* Start timer threads for all rooms */
+    for (int i = 0; i < NUM_ROOMS; i++) {
+        pthread_t tid;
+        TimerArg *ta = malloc(sizeof(TimerArg));
+        ta->room = i;
+        pthread_create(&tid, NULL, timer_thread, ta);
+        pthread_detach(tid);
+    }
+
+    /* Accept loop */
     while (1) {
         struct sockaddr_in caddr;
         socklen_t clen = sizeof(caddr);
         int cfd = accept(listen_fd, (struct sockaddr *)&caddr, &clen);
         if (cfd < 0) break;
 
-        /* trouver un slot libre */
         pthread_mutex_lock(&clients_mutex);
         int slot = -1;
         for (int i = 0; i < MAX_CLIENTS; i++) {
@@ -429,17 +731,15 @@ int main(int argc, char *argv[]) {
         }
         clients[slot].fd     = cfd;
         clients[slot].active = 1;
+        clients[slot].balance = STARTING_BALANCE;
+        clients[slot].room   = 0;
         memset(clients[slot].name, 0, MAX_NAME_LEN);
         inet_ntop(AF_INET, &caddr.sin_addr, clients[slot].ip, INET_ADDRSTRLEN);
         pthread_mutex_unlock(&clients_mutex);
 
-        log_msg("SERVER", "Nouvelle connexion depuis %s (slot %d)",
-                clients[slot].ip, slot);
+        log_msg("SERVER", "Connexion depuis %s (slot %d) [total: %d]",
+                clients[slot].ip, slot, count_all_connected());
 
-        /* annoncer l'enchère au nouveau connecté (sera affiné dans handle_client) */
-        announce_auction();
-
-        /* thread dédié */
         ClientArg *ca = malloc(sizeof(ClientArg));
         ca->slot = slot;
         pthread_t tid;

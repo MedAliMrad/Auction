@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enchères en Temps Réel</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 900px; margin: 0 auto; }
+        header {
+            text-align: center;
+            padding: 30px 0;
+        }
+        header h1 {
+            font-size: 2rem;
+            background: linear-gradient(90deg, #f7971e, #ffd200);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 5px;
+        }
+        header .subtitle { color: #888; font-size: 0.9rem; }
+
+        .stats-bar {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+        .stat {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 12px 24px;
+            text-align: center;
+            min-width: 140px;
+        }
+        .stat .value {
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: #ffd200;
+        }
+        .stat .label { font-size: 0.75rem; color: #888; margin-top: 4px; }
+        .stat.timer .value { color: #ff6b6b; }
+        .stat.balance .value { color: #51cf66; }
+        .stat.connected .value { color: #74c0fc; }
+
+        .auction-card {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            padding: 30px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .auction-card .item-name {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 10px;
+        }
+        .auction-card .leader {
+            color: #ffd200;
+            font-size: 1rem;
+        }
+
+        .bid-section {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            align-items: center;
+            margin: 25px 0;
+            flex-wrap: wrap;
+        }
+        .bid-section input {
+            background: rgba(255,255,255,0.1);
+            border: 2px solid rgba(255,255,255,0.2);
+            border-radius: 10px;
+            padding: 14px 20px;
+            font-size: 1.2rem;
+            color: #fff;
+            width: 180px;
+            text-align: center;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+        .bid-section input:focus { border-color: #ffd200; }
+        .bid-section button {
+            background: linear-gradient(135deg, #f7971e, #ffd200);
+            border: none;
+            border-radius: 10px;
+            padding: 14px 30px;
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #1a1a2e;
+            cursor: pointer;
+            transition: transform 0.2s, opacity 0.2s;
+        }
+        .bid-section button:hover { transform: scale(1.05); }
+        .bid-section button:active { transform: scale(0.95); }
+        .quick-bids { display: flex; gap: 8px; justify-content: center; margin-bottom: 15px; }
+        .quick-bids button {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+            padding: 8px 16px;
+            color: #ffd200;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+        .quick-bids button:hover { background: rgba(255,215,0,0.2); }
+
+        .history {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .history h3 { color: #888; font-size: 0.85rem; margin-bottom: 12px; text-transform: uppercase; }
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            font-size: 0.9rem;
+        }
+        .history-item:last-child { border-bottom: none; }
+        .history-item .time { color: #666; }
+        .history-item .bidder { color: #74c0fc; }
+        .history-item .amount { color: #ffd200; font-weight: 600; }
+
+        .messages {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .messages h3 { color: #888; font-size: 0.85rem; margin-bottom: 12px; text-transform: uppercase; }
+        .msg { padding: 5px 0; font-size: 0.85rem; }
+        .msg.ok { color: #51cf66; }
+        .msg.error { color: #ff6b6b; }
+        .msg.bid { color: #ffd200; }
+        .msg.winner { color: #cc5de8; font-weight: 700; }
+        .msg.chat { color: #868e96; }
+        .msg.info { color: #74c0fc; }
+        .msg.next { color: #ffd200; font-weight: 600; }
+
+        .winner-banner {
+            background: linear-gradient(135deg, #cc5de8, #845ef7);
+            border-radius: 16px;
+            padding: 30px;
+            text-align: center;
+            margin: 20px 0;
+            animation: pulse 2s infinite;
+        }
+        .winner-banner h2 { font-size: 1.5rem; margin-bottom: 10px; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.85; }
+        }
+
+        @media (max-width: 600px) {
+            .stat { min-width: 100px; padding: 10px 16px; }
+            .stat .value { font-size: 1.2rem; }
+            .auction-card .item-name { font-size: 1.3rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Enchères en Temps Réel</h1>
+            <p class="subtitle">Interface Web — Rafraîchissement automatique</p>
+        </header>
+
+        <div class="stats-bar">
+            <div class="stat timer">
+                <div class="value" id="timer">--</div>
+                <div class="label">Secondes</div>
+            </div>
+            <div class="stat">
+                <div class="value" id="price">0 DT</div>
+                <div class="label">Prix actuel</div>
+            </div>
+            <div class="stat balance">
+                <div class="value" id="balance">1000 DT</div>
+                <div class="label">Mon solde</div>
+            </div>
+            <div class="stat connected">
+                <div class="value" id="connected">0</div>
+                <div class="label">Connectés</div>
+            </div>
+        </div>
+
+        <div class="auction-card">
+            <div class="item-name" id="item-name">En attente...</div>
+            <div class="leader" id="leader">Meneur : aucun</div>
+        </div>
+
+        <div id="winner-section"></div>
+
+        <div class="quick-bids" id="quick-bids"></div>
+
+        <div class="bid-section">
+            <input type="number" id="bid-input" placeholder="Montant (DT)" min="1">
+            <button onclick="placeBid()">MISER</button>
+        </div>
+
+        <div class="history">
+            <h3>Historique des mises</h3>
+            <div id="history-list"></div>
+        </div>
+
+        <div class="messages">
+            <h3>Messages</h3>
+            <div id="msg-list"></div>
+        </div>
+    </div>
+
+    <script>
+        let lastMsgCount = 0;
+
+        async function fetchState() {
+            try {
+                const resp = await fetch('/api/state');
+                const s = await resp.json();
+
+                document.getElementById('timer').textContent = s.time_left;
+                document.getElementById('price').textContent = s.current_price + ' DT';
+                document.getElementById('balance').textContent = s.balance + ' DT';
+                document.getElementById('connected').textContent = s.connected;
+                document.getElementById('item-name').textContent = s.item || 'En attente...';
+                document.getElementById('leader').textContent = 'Meneur : ' + (s.leader || 'aucun');
+
+                // Quick bid buttons
+                const minBid = s.current_price + 10;
+                const qb = document.getElementById('quick-bids');
+                qb.innerHTML = '';
+                [minBid, minBid + 20, minBid + 50, minBid + 100].forEach(v => {
+                    if (v <= s.balance) {
+                        const btn = document.createElement('button');
+                        btn.textContent = v + ' DT';
+                        btn.onclick = () => placeBidAmount(v);
+                        qb.appendChild(btn);
+                    }
+                });
+
+                // Timer color
+                const timerEl = document.getElementById('timer');
+                if (s.time_left <= 5) timerEl.style.color = '#ff0000';
+                else if (s.time_left <= 10) timerEl.style.color = '#ff6b6b';
+                else timerEl.style.color = '#ff6b6b';
+
+                // Winner
+                const ws = document.getElementById('winner-section');
+                if (s.winner) {
+                    ws.innerHTML = `<div class="winner-banner"><h2>🏆 ${s.winner.text}</h2></div>`;
+                } else {
+                    ws.innerHTML = '';
+                }
+
+                // History
+                const hl = document.getElementById('history-list');
+                hl.innerHTML = s.history.slice(-15).reverse().map(h =>
+                    `<div class="history-item">
+                        <span class="time">${h.time}</span>
+                        <span class="bidder">${h.bidder}</span>
+                        <span class="amount">${h.amount} DT</span>
+                    </div>`
+                ).join('');
+
+                // Messages
+                if (s.messages.length !== lastMsgCount) {
+                    const ml = document.getElementById('msg-list');
+                    ml.innerHTML = s.messages.slice(-20).reverse().map(m =>
+                        `<div class="msg ${m.type}">${m.text}</div>`
+                    ).join('');
+                    lastMsgCount = s.messages.length;
+                }
+
+            } catch (e) {
+                console.error('Fetch error:', e);
+            }
+        }
+
+        async function placeBidAmount(amount) {
+            await fetch('/api/bid?amount=' + amount);
+        }
+
+        function placeBid() {
+            const input = document.getElementById('bid-input');
+            const amount = parseInt(input.value);
+            if (amount > 0) {
+                placeBidAmount(amount);
+                input.value = '';
+            }
+        }
+
+        document.getElementById('bid-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') placeBid();
+        });
+
+        setInterval(fetchState, 1000);
+        fetchState();
+    </script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+══════════════════════════════════════════
+Date       : 2026-05-07 05:24:15
+Salle      : 4
+Article    : Woman
+Prix depart: 1 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 05:24:15
+Salle      : 2
+Article    : Woman
+Prix depart: 1 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 05:24:15
+Salle      : 1
+Article    : Woman
+Prix depart: 1 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+
+══════════════════════════════════════════
+Date       : 2026-05-07 05:24:15
+Salle      : 3
+Article    : Woman
+Prix depart: 1 DT
+Resultat   : Invendu
+
+Historique des mises :
+══════════════════════════════════════════
+

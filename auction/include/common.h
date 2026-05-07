@@ -113,39 +113,55 @@ static inline void platform_mutex_init(pthread_mutex_t *mutex) {
 #endif
 
 /* ─── Réseau ──────────────────────────────────────── */
-#define DEFAULT_PORT     8080
-#define MAX_CLIENTS      32
-#define MAX_NAME_LEN     32
-#define MAX_ITEM_LEN     64
-#define BUFFER_SIZE      256
+#define DEFAULT_PORT       8080
+#define MAX_CLIENTS        32
+#define MAX_NAME_LEN       32
+#define MAX_ITEM_LEN       64
+#define BUFFER_SIZE        256
 
-/* ─── Durée de l'enchère (secondes) ──────────────── */
-#define AUCTION_DURATION 60
+/* ─── Enchère ────────────────────────────────────── */
+#define AUCTION_DURATION   60
+#define MIN_BID_INCREMENT  10
+#define TIMER_EXTENSION    30
+#define TIMER_THRESHOLD    10
+#define STARTING_BALANCE   1000
+#define MAX_ITEMS          10
+#define MAX_HISTORY        64
+#define NUM_ROOMS          4
+
+/* ─── Fichier résultats ──────────────────────────── */
+#define RESULTS_FILE       "resultats.txt"
 
 /* ══════════════════════════════════════════════════
    PROTOCOLE DE MESSAGES
-   Chaque message échangé sur le socket a un type
-   suivi d'une payload fixe (struct Message).
    ══════════════════════════════════════════════════ */
 typedef enum {
-    MSG_JOIN        = 1,  /* client → serveur : "je m'appelle X"         */
-    MSG_BID         = 2,  /* client → serveur : "je mise N DT"           */
-    MSG_AUCTION_INFO= 3,  /* serveur → client : article + prix départ    */
-    MSG_BID_OK      = 4,  /* serveur → client : mise acceptée            */
-    MSG_BID_REJECT  = 5,  /* serveur → client : mise refusée             */
-    MSG_UPDATE      = 6,  /* serveur → tous   : nouveau meilleur prix    */
-    MSG_TIMER       = 7,  /* serveur → tous   : temps restant            */
-    MSG_WINNER      = 8,  /* serveur → tous   : gagnant de l'enchère     */
-    MSG_CHAT        = 9,  /* serveur → tous   : message texte libre      */
-    MSG_BYE         = 10  /* client → serveur : déconnexion propre       */
+    MSG_JOIN         = 1,
+    MSG_BID          = 2,
+    MSG_AUCTION_INFO = 3,
+    MSG_BID_OK       = 4,
+    MSG_BID_REJECT   = 5,
+    MSG_UPDATE       = 6,
+    MSG_TIMER        = 7,
+    MSG_WINNER       = 8,
+    MSG_CHAT         = 9,
+    MSG_BYE          = 10,
+    MSG_CONNECTED    = 11,
+    MSG_HISTORY      = 12,
+    MSG_BALANCE      = 13,
+    MSG_NEXT_AUCTION = 14,
+    MSG_ROOM_LIST    = 15,
+    MSG_ROOM_JOIN    = 16
 } MsgType;
 
 typedef struct {
-    uint8_t  type;                  /* MsgType                        */
-    char     name[MAX_NAME_LEN];    /* nom du client ou gagnant       */
-    char     item[MAX_ITEM_LEN];    /* article mis aux enchères       */
-    uint32_t amount;                /* mise / prix départ / temps     */
-    char     text[BUFFER_SIZE];     /* message texte libre            */
+    uint8_t  type;
+    char     name[MAX_NAME_LEN];
+    char     item[MAX_ITEM_LEN];
+    uint32_t amount;
+    uint32_t balance;
+    uint8_t  room;
+    char     text[BUFFER_SIZE];
 } Message;
 
 /* ─── Utilitaire log horodaté ────────────────────── */
